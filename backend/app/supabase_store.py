@@ -6,7 +6,6 @@ Supabase user id from the access token; RLS still protects direct client reads.
 
 from __future__ import annotations
 
-import base64
 import logging
 import uuid
 from typing import TYPE_CHECKING
@@ -53,17 +52,12 @@ def _rest(path: str) -> str:
     return f"{settings.supabase_url.rstrip('/')}/rest/v1/{path.lstrip('/')}"
 
 
-def _storage(path: str) -> str:
-    return f"{settings.supabase_url.rstrip('/')}/storage/v1/{path.lstrip('/')}"
-
-
 async def _request(
     method: str,
     url: str,
     *,
     headers: dict[str, str] | None = None,
     json_body: object | None = None,
-    content: bytes | None = None,
 ) -> bool:
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -72,7 +66,6 @@ async def _request(
                 url,
                 headers=headers or _headers(),
                 json=json_body,
-                content=content,
             )
         if response.status_code >= 400:
             logger.warning(
@@ -152,39 +145,3 @@ async def upsert_task_result(task: TaskRecord) -> bool:
         headers=_headers({"Prefer": "resolution=merge-duplicates,return=minimal"}),
         json_body=payload,
     )
-
-
-async def upload_screenshot(
-    task: TaskRecord, screenshot_base64: str
-) -> str | None:
-    """Upload a generated PNG to the private Supabase Storage bucket."""
-    if not configured() or not _is_uuid(task.owner):
-        return None
-    path = f"{task.owner}/{task.id}.png"
-    try:
-        payload = base64.b64decode(screenshot_base64)
-    except Exception:
-        return None
-
-    uploaded = await _request(
-        "POST",
-        _storage(f"object/{settings.supabase_storage_bucket}/{path}"),
-        headers=_headers(
-            {
-                "Content-Type": "image/png",
-                "x-upsert": "true",
-            }
-        ),
-        content=payload,
-    )
-    if not uploaded:
-        return None
-
-    signed = await _request(
-        "POST",
-        _storage(f"object/sign/{settings.supabase_storage_bucket}/{path}"),
-        json_body={"expiresIn": 3600},
-    )
-    if not signed:
-        return None
-    return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/sign/{settings.supabase_storage_bucket}/{path}"

@@ -15,9 +15,8 @@ class AgentRunRequest(BaseModel):
         default="Extract the main content of this page.",
         max_length=2000,
         description=(
-            "Natural-language goal for the run. Currently interpreted with keyword "
-            "rules (mentions of links or screenshots widen the extraction); a model "
-            "based planner can replace that later without changing this contract."
+            "Natural-language goal for the run. Keyword hints widen extraction; "
+            "when AI is enabled the planner uses it to build a short plan and answer."
         ),
     )
     max_links: int = Field(

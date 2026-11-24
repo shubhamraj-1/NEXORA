@@ -6,9 +6,9 @@ import { AuthProvider } from "@/components/AuthProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NEXORA — Autonomous Web Intelligence",
+  title: "NEXORA — Browser Task Runner",
   description:
-    "Run and monitor Playwright browser agents with Supabase-backed history and exports.",
+    "Run Playwright browser tasks, inspect structured results, and keep history in Supabase.",
 };
 
 export default function RootLayout({

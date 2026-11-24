@@ -29,12 +29,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/" className="block">
             <div className="text-xl font-bold tracking-[0.2em]">NEXORA</div>
             <div className="mt-1 text-[11px] text-nex-muted">
-              From instructions to execution
+              Browser task runner
             </div>
           </Link>
           <span className="nex-pill lg:mt-4">
             <span className={aiConfigured ? "nex-dot" : "nex-dot nex-dot-off"} />
-            {aiConfigured ? "AI online" : "AI optional"}
+            {aiConfigured ? "AI enabled" : "AI optional"}
           </span>
         </div>
 

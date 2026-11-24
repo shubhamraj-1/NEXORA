@@ -1,4 +1,4 @@
-"""API tests for NEXORA. Run from ``backend/``: ``python -m pytest -q``."""
+"""API tests for NEXORA. Run from the repo root: ``python -m pytest backend/tests -q``."""
 
 from __future__ import annotations
 

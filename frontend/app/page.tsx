@@ -49,14 +49,14 @@ export default function OverviewPage() {
         <div className="relative">
           <div className="nex-pill mb-5">
             <span className="nex-dot" />
-            Autonomous web intelligence
+            Browser task runner
           </div>
           <h1 className="max-w-2xl text-3xl font-bold leading-tight md:text-5xl">
-            From instructions to execution.
+            Run browser tasks, inspect the results.
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-nex-muted md:text-base">
-            NEXORA drives a real Chromium browser, extracts structured page data,
-            traces every step, and optionally uses AI to plan and answer.
+            NEXORA drives Chromium, extracts structured page data, traces each
+            step, and optionally uses OpenAI for planning and answers.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/runs/new" className="nex-btn nex-btn-primary">

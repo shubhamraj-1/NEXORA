@@ -30,6 +30,23 @@ persistence, Row Level Security, and a private Storage bucket for screenshots.
 - CSV/JSON exports for current results, execution traces, links, and saved runs.
 - Backend tests, frontend unit tests, and a production frontend build.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[Next.js dashboard] -->|JSON over /api/*| API[FastAPI]
+    API --> Browser[Playwright Chromium]
+    API --> DB[(Supabase Postgres + RLS)]
+    API --> Storage[(Supabase Storage)]
+    API -. optional .-> AI[OpenAI planner]
+    UI --> Auth[Supabase Auth]
+    Auth --> DB
+    Auth --> Storage
+```
+
+The browser never receives privileged Supabase credentials. Backend writes use
+the service role key; client reads are scoped by RLS to `auth.uid()`.
+
 ## Repository layout
 
 ```text
@@ -100,7 +117,40 @@ OpenAI and Supabase persistence are optional.
 ## Configuration
 
 Copy `.env.example` to root `.env` for backend settings. Keep the real file out
-of source control.
+of source control. Node 20+ is recommended for the frontend.
+
+### Environment variables
+
+Backend, in root `.env`:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `OPENAI_API_KEY` | Enables planning and answers | unset |
+| `OPENAI_MODEL` | Model used by the planner | `gpt-4o-mini` |
+| `OPENAI_TIMEOUT_S` | Planner request timeout | `30` |
+| `MAX_AI_CONTEXT_CHARS` | Page text sent to the planner | `6000` |
+| `AI_MAX_PLAN_STEPS` | Maximum plan steps returned | `8` |
+| `SUPABASE_URL` | Project URL | unset |
+| `SUPABASE_ANON_KEY` | Public anon key | unset |
+| `SUPABASE_SERVICE_ROLE_KEY` | Backend-only write key | unset |
+| `SUPABASE_JWT_SECRET` | Legacy HS256 verification secret | unset |
+| `SUPABASE_JWKS_URL` | Preferred JWKS verification endpoint | unset |
+| `SUPABASE_STORAGE_BUCKET` | Private screenshot bucket | `generated-files` |
+| `DATABASE_CONFIGURED` | Enables Supabase writes after schema setup | `false` |
+| `RATE_LIMIT_PER_MINUTE` | Sliding-window limit | `30` |
+| `RATE_LIMIT_WINDOW_SECONDS` | Sliding-window size | `60` |
+
+Frontend, in `frontend/.env.local`:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Public project URL | unset |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon key | unset |
+| `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET` | Screenshot bucket name | `generated-files` |
+| `NEXORA_API_URL` | Backend target for `/api/*` rewrites | `http://127.0.0.1:8000` |
+
+Only `NEXT_PUBLIC_*` values are available to browser code. `NEXORA_API_URL` is
+used by the Next.js rewrites, not exposed as a browser secret.
 
 ### Optional OpenAI
 

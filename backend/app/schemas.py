@@ -46,8 +46,11 @@ class AgentRunRequest(BaseModel):
     @field_validator("url")
     @classmethod
     def reject_unsafe_urls(cls, value: HttpUrl) -> HttpUrl:
-        """Block SSRF targets before any browser work is scheduled."""
-        validate_public_url(value)
+        """Reject obvious SSRF targets without blocking on DNS.
+
+        The full DNS check runs in a worker thread before navigation.
+        """
+        validate_public_url(value, resolve=False)
         return value
 
 

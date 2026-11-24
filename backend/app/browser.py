@@ -30,6 +30,7 @@ USER_AGENT = (
 )
 
 DEFAULT_TIMEOUT_MS = 30_000
+MAX_CONCURRENT_PAGES = 4
 
 
 def _new_worker_loop() -> asyncio.AbstractEventLoop:
@@ -80,6 +81,7 @@ class BrowserManager:
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._lock = asyncio.Lock()
+        self._page_slots = asyncio.Semaphore(MAX_CONCURRENT_PAGES)
 
     # -- worker thread ---------------------------------------------------
 
@@ -200,7 +202,8 @@ class BrowserManager:
         self, action: Callable[[Page], Awaitable[T]]
     ) -> T:
         """Run ``action`` with a fresh page, on the Playwright worker loop."""
-        return await self._dispatch(self._with_page(action))
+        async with self._page_slots:
+            return await self._dispatch(self._with_page(action))
 
     async def _with_page(self, action: Callable[[Page], Awaitable[T]]) -> T:
         async with self.page() as page:

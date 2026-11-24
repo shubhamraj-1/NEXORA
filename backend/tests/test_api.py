@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app import agent as agent_module
 from app import auth as auth_module
+from app import security as security_module
 from app import tasks as tasks_module
 from app.config import settings
 from app.ratelimit import rate_limiter
@@ -72,6 +73,21 @@ def test_capabilities(client: TestClient) -> None:
 def test_invalid_url_is_rejected(client: TestClient) -> None:
     response = client.post(
         "/v1/agent/run", json={"url": "not-a-url", "instruction": "x"}
+    )
+    assert response.status_code == 422
+
+
+def test_private_dns_answer_is_rejected_off_loop(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DNS validation still blocks a public-looking host resolving privately."""
+
+    def private_answer(*_: object, **__: object) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        return [(2, 1, 6, "", ("127.0.0.1", 0))]
+
+    monkeypatch.setattr(security_module.socket, "getaddrinfo", private_answer)
+    response = client.post(
+        "/v1/agent/run", json={"url": "https://public.example", "instruction": "x"}
     )
     assert response.status_code == 422
 

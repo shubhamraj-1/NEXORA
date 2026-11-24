@@ -227,6 +227,22 @@ npm run build
 The backend suite uses local test tokens with authentication enabled; it does
 not require Supabase credentials and does not write to Supabase.
 
+## Resource limits
+
+One shared Chromium process is reused across requests. At most four browser
+page contexts run concurrently; extra tasks wait for a free slot. In-memory
+task history is capped at 200 records, and the default rate limit is 30
+requests per minute per user.
+
+Full-page PNGs larger than 5 MB are recorded as skipped instead of being
+base64-encoded into a result. URL syntax is checked at the Pydantic boundary,
+DNS resolution runs in a worker thread, and document navigations including
+redirects are revalidated before Playwright sends them.
+
+For local development, run one backend and one frontend process. Chromium is
+the largest memory consumer, so avoid duplicate `uvicorn` or `next dev`
+instances. Task polling stops once a task reaches a terminal state.
+
 ## Deployment
 
 `Dockerfile` builds the backend image. The frontend can be deployed to Vercel or

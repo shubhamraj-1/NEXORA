@@ -58,11 +58,13 @@ def _resolve_public_host(hostname: str) -> bool:
     return all(_ip_is_public(address) for address in addresses)
 
 
-def validate_public_url(value: object) -> str:
+def validate_public_url(value: object, *, resolve: bool = True) -> str:
     """Validate and return a URL that is safe for the browser to navigate to.
 
     Raises ``ValueError`` for use as a Pydantic validator. ``is_safe`` wraps this
-    for callers that prefer a boolean check.
+    for callers that prefer a boolean check. DNS resolution is optional so the
+    request body validator stays non-blocking; the async execution path calls
+    this with ``resolve=True`` off the event loop.
     """
     raw = str(value).strip()
     parsed = urlparse(raw)
@@ -88,7 +90,7 @@ def validate_public_url(value: object) -> str:
     if literal is not None:
         if not _ip_is_public(host):
             raise ValueError("Private, loopback, or reserved IP addresses are not allowed.")
-    elif not _resolve_public_host(host):
+    elif resolve and not _resolve_public_host(host):
         raise ValueError("Hostname could not be resolved to a public IP address.")
 
     return raw
@@ -109,7 +111,7 @@ def unsafe_url_error(value: object) -> HTTPException:
         validate_public_url(value)
     except ValueError as exc:
         return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
-    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsafe URL.")
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unsafe URL.")

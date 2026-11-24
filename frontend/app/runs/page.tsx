@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -13,44 +13,60 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const activeRef = useRef(false);
+  const loaded = useRef(false);
 
-  const load = useCallback(async () => {
-    setMessage(null);
-    let backend: TaskRecord[] = [];
-    try {
-      backend = await listTasks(token);
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Could not load backend tasks.");
-    }
-    setTasks(backend);
-
-    if (user && supabaseReady) {
+  const load = useCallback(
+    async (force = false) => {
+      if (inFlight.current || (!force && loaded.current && !activeRef.current)) return;
+      inFlight.current = true;
+      loaded.current = true;
       try {
-        const saved = await listSavedTasks();
-        const known = new Set(backend.map((task) => task.id));
-        const restored = saved
-          .filter((item) => !known.has(item.id))
-          .map<TaskRecord>((item) => ({
-            id: item.id,
-            owner: user.uid,
-            status: item.status,
-            progress: item.progress,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-            request: { url: item.url, instruction: item.instruction },
-            result: null,
-            error: item.error,
-            logs: [],
-          }));
-        setTasks([...backend, ...restored]);
-      } catch {
-        // Supabase is optional for display.
+        setMessage(null);
+        let backend: TaskRecord[] = [];
+        try {
+          backend = await listTasks(token);
+        } catch (cause) {
+          setMessage(cause instanceof Error ? cause.message : "Could not load backend tasks.");
+        }
+        activeRef.current = backend.some(
+          (task) => task.status === "queued" || task.status === "running",
+        );
+        setTasks(backend);
+
+        if (user && supabaseReady) {
+          try {
+            const saved = await listSavedTasks();
+            const known = new Set(backend.map((task) => task.id));
+            const restored = saved
+              .filter((item) => !known.has(item.id))
+              .map<TaskRecord>((item) => ({
+                id: item.id,
+                owner: user.uid,
+                status: item.status,
+                progress: item.progress,
+                created_at: item.created_at,
+                updated_at: item.updated_at,
+                request: { url: item.url, instruction: item.instruction },
+                result: null,
+                error: item.error,
+                logs: [],
+              }));
+            setTasks([...backend, ...restored]);
+          } catch {
+            // Supabase is optional for display.
+          }
+        }
+      } finally {
+        inFlight.current = false;
       }
-    }
-  }, [token, user, supabaseReady]);
+    },
+    [token, user, supabaseReady],
+  );
 
   useEffect(() => {
-    void load();
+    void load(true);
     const timer = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(timer);
   }, [load]);
@@ -60,7 +76,7 @@ export default function TasksPage() {
     try {
       const updated = await cancelTask(taskId, token);
       if (user) await saveTaskSnapshot(updated).catch(() => undefined);
-      await load();
+      await load(true);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Could not cancel task.");
     } finally {
@@ -78,7 +94,7 @@ export default function TasksPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button className="nex-btn nex-btn-ghost" onClick={() => void load()}>
+          <button className="nex-btn nex-btn-ghost" onClick={() => void load(true)}>
             Refresh
           </button>
           <Link href="/runs/new" className="nex-btn nex-btn-primary">

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from typing import Any
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/v1/agent", tags=["agent"])
 
 MAX_TEXT_CHARS = 20_000
 MAX_HEADINGS = 20
+MAX_SCREENSHOT_BYTES = 5_000_000
 NETWORK_IDLE_BUDGET_MS = 5_000
 
 _LINK_HINTS = ("link", "url", "href", "reference")
@@ -102,11 +104,23 @@ def _dedupe_links(raw: list[dict[str, Any]], limit: int) -> list[ExtractedLink]:
     return links
 
 
+async def _guard_navigation(route: Any) -> None:
+    """Abort document navigations that leave the public web (redirect SSRF)."""
+    if route.request.resource_type == "document":
+        try:
+            await asyncio.to_thread(validate_public_url, route.request.url)
+        except ValueError:
+            await route.abort()
+            return
+    await route.continue_()
+
+
 async def _scrape(
     page: Page, request: AgentRunRequest, steps: list[AgentStep]
 ) -> dict[str, Any]:
     """Drive one page. Runs on the Playwright worker loop, not the request loop."""
     target_url = str(request.url)
+    await page.route("**/*", _guard_navigation)
 
     phase = time.perf_counter()
     response = await page.goto(
@@ -138,8 +152,12 @@ async def _scrape(
     if _wants_screenshot(request):
         phase = time.perf_counter()
         png = await page.screenshot(full_page=True)
-        screenshot_b64 = base64.b64encode(png).decode("ascii")
-        _record(steps, "screenshot", f"captured {len(png)} byte PNG", phase)
+        if len(png) > MAX_SCREENSHOT_BYTES:
+            detail = f"skipped {len(png)} byte PNG (limit {MAX_SCREENSHOT_BYTES} bytes)"
+        else:
+            screenshot_b64 = base64.b64encode(png).decode("ascii")
+            detail = f"captured {len(png)} byte PNG"
+        _record(steps, "screenshot", detail, phase)
 
     return {
         "final_url": page.url,
@@ -159,7 +177,13 @@ async def execute_run(request: AgentRunRequest) -> AgentRunResponse:
     """Execute one run. Shared by the synchronous route and the task worker."""
     started = time.perf_counter()
     steps: list[AgentStep] = []
-    target_url = validate_public_url(request.url)
+    try:
+        target_url = await asyncio.to_thread(validate_public_url, request.url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
     try:
         scraped = await browser_manager.run_with_page(

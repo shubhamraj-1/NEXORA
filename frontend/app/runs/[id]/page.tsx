@@ -34,54 +34,70 @@ export default function TaskDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const syncedKey = useRef("");
+  const inFlight = useRef(false);
+  const activeRef = useRef(false);
+  const loaded = useRef(false);
 
-  const load = useCallback(async () => {
-    try {
-      const current = await getTask(taskId, token);
-      setTask(current);
-      setLogs(current.logs);
-      setResult(current.result);
-      setMessage(null);
+  const load = useCallback(
+    async (force = false) => {
+      if (inFlight.current || (!force && loaded.current && !activeRef.current)) return;
+      inFlight.current = true;
+      loaded.current = true;
+      try {
+        try {
+          const current = await getTask(taskId, token);
+          activeRef.current =
+            current.status === "queued" || current.status === "running";
+          setTask(current);
+          setLogs(current.logs);
+          setResult(current.result);
+          setMessage(null);
 
-      if (user) {
-        const key = `${current.id}:${current.status}:${current.updated_at}`;
-        if (syncedKey.current !== key) {
-          syncedKey.current = key;
-          await saveTaskSnapshot(current).catch(() => undefined);
-          await saveTaskLogs(current.id, current.logs).catch(() => undefined);
-          if (current.result) {
-            await saveTaskResult(current.id, current.result).catch(() => undefined);
+          if (user) {
+            const key = `${current.id}:${current.status}:${current.updated_at}`;
+            if (syncedKey.current !== key) {
+              syncedKey.current = key;
+              await saveTaskSnapshot(current).catch(() => undefined);
+              await saveTaskLogs(current.id, current.logs).catch(() => undefined);
+              if (current.result) {
+                await saveTaskResult(current.id, current.result).catch(() => undefined);
+              }
+            }
+          }
+        } catch (cause) {
+          const errorText = cause instanceof Error ? cause.message : "Task not found.";
+          activeRef.current = false;
+          try {
+            const saved = (await listSavedTasks()).find((item) => item.id === taskId);
+            if (!saved) throw new Error(errorText);
+            setTask({
+              id: saved.id,
+              owner: user?.uid ?? "unknown",
+              status: saved.status,
+              progress: saved.progress,
+              created_at: saved.created_at,
+              updated_at: saved.updated_at,
+              request: { url: saved.url, instruction: saved.instruction },
+              result: null,
+              error: saved.error,
+              logs: [],
+            });
+            setLogs(await listTaskLogs(taskId));
+            setResult(await getSavedTaskResult(taskId));
+            setMessage("Backend task expired; showing the Supabase snapshot.");
+          } catch {
+            setMessage(errorText);
           }
         }
+      } finally {
+        inFlight.current = false;
       }
-    } catch (cause) {
-      const errorText = cause instanceof Error ? cause.message : "Task not found.";
-      try {
-        const saved = (await listSavedTasks()).find((item) => item.id === taskId);
-        if (!saved) throw new Error(errorText);
-        setTask({
-          id: saved.id,
-          owner: user?.uid ?? "unknown",
-          status: saved.status,
-          progress: saved.progress,
-          created_at: saved.created_at,
-          updated_at: saved.updated_at,
-          request: { url: saved.url, instruction: saved.instruction },
-          result: null,
-          error: saved.error,
-          logs: [],
-        });
-        setLogs(await listTaskLogs(taskId));
-        setResult(await getSavedTaskResult(taskId));
-        setMessage("Backend task expired; showing the Supabase snapshot.");
-      } catch {
-        setMessage(errorText);
-      }
-    }
-  }, [taskId, token, user]);
+    },
+    [taskId, token, user],
+  );
 
   useEffect(() => {
-    void load();
+    void load(true);
     const timer = window.setInterval(() => void load(), 2500);
     return () => window.clearInterval(timer);
   }, [load]);
@@ -90,7 +106,7 @@ export default function TaskDetailPage() {
     setBusy(true);
     try {
       await cancelTask(taskId, token);
-      await load();
+      await load(true);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Could not cancel task.");
     } finally {

@@ -9,17 +9,27 @@ import { cancelTask, listTasks, type TaskRecord } from "@/lib/api";
 import { listSavedTasks, saveTaskSnapshot } from "@/lib/supabase";
 
 export default function TasksPage() {
-  const { user, token, supabaseReady } = useAuth();
+  const { user, token, supabaseReady, capabilities } = useAuth();
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const inFlight = useRef(false);
   const activeRef = useRef(false);
   const loaded = useRef(false);
+  const authRequired = capabilities?.auth.required ?? false;
+  const signedOut = authRequired && !token;
+  const canLoad = Boolean(capabilities) && (!authRequired || Boolean(token));
 
   const load = useCallback(
     async (force = false) => {
       if (inFlight.current || (!force && loaded.current && !activeRef.current)) return;
+      if (!canLoad) {
+        setTasks([]);
+        setMessage(null);
+        activeRef.current = false;
+        loaded.current = true;
+        return;
+      }
       inFlight.current = true;
       loaded.current = true;
       try {
@@ -62,14 +72,15 @@ export default function TasksPage() {
         inFlight.current = false;
       }
     },
-    [token, user, supabaseReady],
+    [token, user, supabaseReady, canLoad],
   );
 
   useEffect(() => {
     void load(true);
+    if (!canLoad) return;
     const timer = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(timer);
-  }, [load]);
+  }, [load, canLoad]);
 
   async function handleCancel(taskId: string) {
     setBusyId(taskId);
@@ -107,9 +118,14 @@ export default function TasksPage() {
 
       {tasks.length === 0 ? (
         <div className="nex-card p-12 text-center">
-          <p className="text-sm text-nex-muted">No tasks found.</p>
-          <Link href="/runs/new" className="mt-3 inline-block text-sm text-nex-accent">
-            Launch one now
+          <p className="text-sm text-nex-muted">
+            {signedOut ? "Sign in to view your tasks." : "No tasks found."}
+          </p>
+          <Link
+            href={signedOut ? "/settings" : "/runs/new"}
+            className="mt-3 inline-block text-sm text-nex-accent"
+          >
+            {signedOut ? "Sign in" : "Launch one now"}
           </Link>
         </div>
       ) : (

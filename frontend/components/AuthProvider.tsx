@@ -17,6 +17,7 @@ import {
   signIn as supabaseSignIn,
   signOut as supabaseSignOut,
   signUp as supabaseSignUp,
+  type SignUpResult,
   type SupabaseUser,
 } from "@/lib/supabase";
 
@@ -28,7 +29,7 @@ type AuthContextValue = {
   token: string | null;
   refreshToken: () => Promise<string | null>;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 };
 
@@ -76,8 +77,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = useCallback(
     async (email: string, password: string) => {
-      await supabaseSignUp(email, password);
+      const result = await supabaseSignUp(email, password);
       await refreshToken();
+      return result;
     },
     [refreshToken],
   );

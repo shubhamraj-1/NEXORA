@@ -1,4 +1,4 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 
 import type {
   AgentRunResponse,
@@ -106,13 +106,18 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(url && anonKey);
 }
 
-export function getSupabase() {
+let cachedClient: SupabaseClient | null = null;
+
+export function getSupabase(): SupabaseClient {
   if (!isSupabaseConfigured()) {
     throw new Error(
       "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to frontend/.env.local.",
     );
   }
-  return createClient(url!, anonKey!);
+  if (!cachedClient) {
+    cachedClient = createClient(url!, anonKey!);
+  }
+  return cachedClient;
 }
 
 function toUser(user: User | null): SupabaseUser | null {
@@ -162,6 +167,11 @@ async function ensureProfile(user: User): Promise<void> {
   );
 }
 
+export type SignUpResult = {
+  user: SupabaseUser;
+  needsEmailConfirmation: boolean;
+};
+
 export async function signIn(email: string, password: string): Promise<SupabaseUser> {
   const supabase = getSupabase();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -170,7 +180,7 @@ export async function signIn(email: string, password: string): Promise<SupabaseU
   return toUser(data.user)!;
 }
 
-export async function signUp(email: string, password: string): Promise<SupabaseUser> {
+export async function signUp(email: string, password: string): Promise<SignUpResult> {
   const supabase = getSupabase();
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -178,8 +188,12 @@ export async function signUp(email: string, password: string): Promise<SupabaseU
     options: { data: { display_name: email.split("@")[0] } },
   });
   if (error) throw new Error(error.message);
-  if (data.user) await ensureProfile(data.user);
-  return toUser(data.user)!;
+  if (!data.user) throw new Error("Sign-up did not return a user.");
+  // Supabase can require email confirmation. In that case there is no session
+  // yet, so profile writes would fail RLS and the UI must not claim success.
+  const needsEmailConfirmation = data.session === null;
+  if (!needsEmailConfirmation) await ensureProfile(data.user);
+  return { user: toUser(data.user)!, needsEmailConfirmation };
 }
 
 export async function signOut(): Promise<void> {

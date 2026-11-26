@@ -18,10 +18,18 @@ export default function SettingsPage() {
     setBusy(true);
     setMessage(null);
     try {
-      if (mode === "signup") await signUp(email, password);
-      else await signIn(email, password);
+      if (mode === "signup") {
+        const result = await signUp(email, password);
+        setMessage(
+          result.needsEmailConfirmation
+            ? "Check your email to confirm your account, then sign in."
+            : "Account created and signed in.",
+        );
+      } else {
+        await signIn(email, password);
+        setMessage("Signed in.");
+      }
       setPassword("");
-      setMessage("Authentication successful.");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Authentication failed.");
     } finally {

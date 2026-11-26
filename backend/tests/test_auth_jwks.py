@@ -88,7 +88,7 @@ def test_jwks_rejects_hs256_token_header(monkeypatch: pytest.MonkeyPatch) -> Non
     private_key = ec.generate_private_key(ec.SECP256R1())
     _use_jwks(monkeypatch, _ec_jwk(private_key, "ec-key"))
     token = jwt.encode(
-        _claims(), "forged-secret", algorithm="HS256", headers={"kid": "ec-key"}
+        _claims(), "forged-local-test-secret-not-for-production-32b", algorithm="HS256", headers={"kid": "ec-key"}
     )
 
     with pytest.raises(ValueError, match="not allowed for the signing key"):
@@ -127,7 +127,7 @@ def test_jwks_rejects_alg_mismatch_in_key_metadata(
 
 
 def test_legacy_secret_mode_still_uses_hs256(monkeypatch: pytest.MonkeyPatch) -> None:
-    secret = "local-test-only-secret"
+    secret = "legacy-local-test-secret-not-for-production-32b"
     monkeypatch.setattr(
         auth_module,
         "settings",

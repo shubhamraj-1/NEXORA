@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -10,6 +11,7 @@ import { saveTaskSnapshot } from "@/lib/supabase";
 export default function NewRunPage() {
   const router = useRouter();
   const { user, token, capabilities } = useAuth();
+  const signedOut = Boolean(capabilities?.auth.required && !token);
   const [url, setUrl] = useState("https://example.com");
   const [instruction, setInstruction] = useState(
     "Summarise this page and list the main links.",
@@ -23,6 +25,10 @@ export default function NewRunPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (signedOut) {
+      setError("Sign in from Settings before queuing a run.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -54,9 +60,13 @@ export default function NewRunPage() {
         </p>
       </div>
 
-      {capabilities?.auth.required && !user ? (
+      {signedOut ? (
         <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
-          This backend requires Supabase authentication. Sign in from Settings before queuing a run.
+          This backend requires Supabase authentication.{" "}
+          <Link href="/settings" className="underline">
+            Sign in from Settings
+          </Link>{" "}
+          before queuing a run.
         </div>
       ) : null}
 
@@ -139,8 +149,12 @@ export default function NewRunPage() {
         {error ? <p className="text-sm text-nex-danger">{error}</p> : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button className="nex-btn nex-btn-primary" type="submit" disabled={busy}>
-            {busy ? "Queuing…" : "Queue task"}
+          <button
+            className="nex-btn nex-btn-primary"
+            type="submit"
+            disabled={busy || signedOut}
+          >
+            {signedOut ? "Sign in to queue" : busy ? "Queuing…" : "Queue task"}
           </button>
           <span className="text-xs text-nex-muted">
             The task worker can be cancelled at any time.

@@ -13,9 +13,17 @@ export default function OverviewPage() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [saved, setSaved] = useState<SavedTask[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const authRequired = capabilities?.auth.required ?? false;
+  const signedOut = authRequired && !token;
+  const canLoad = Boolean(capabilities) && (!authRequired || Boolean(token));
 
   const load = useCallback(async () => {
     setMessage(null);
+    if (!canLoad) {
+      setTasks([]);
+      setSaved([]);
+      return;
+    }
     try {
       setTasks(await listTasks(token));
     } catch (cause) {
@@ -30,7 +38,7 @@ export default function OverviewPage() {
     } else {
       setSaved([]);
     }
-  }, [token, user, supabaseReady]);
+  }, [token, user, supabaseReady, canLoad]);
 
   useEffect(() => {
     void load();
@@ -87,9 +95,14 @@ export default function OverviewPage() {
           {message ? <p className="text-sm text-nex-danger">{message}</p> : null}
           {tasks.length === 0 ? (
             <div className="rounded-xl border border-dashed border-nex-line p-8 text-center">
-              <p className="text-sm text-nex-muted">No tasks yet.</p>
-              <Link href="/runs/new" className="mt-3 inline-block text-sm text-nex-accent">
-                Create your first run
+              <p className="text-sm text-nex-muted">
+                {signedOut ? "Sign in to see your tasks." : "No tasks yet."}
+              </p>
+              <Link
+                href={signedOut ? "/settings" : "/runs/new"}
+                className="mt-3 inline-block text-sm text-nex-accent"
+              >
+                {signedOut ? "Sign in" : "Create your first run"}
               </Link>
             </div>
           ) : (

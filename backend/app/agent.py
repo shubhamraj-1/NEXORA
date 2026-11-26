@@ -25,6 +25,20 @@ MAX_TEXT_CHARS = 20_000
 MAX_HEADINGS = 20
 MAX_SCREENSHOT_BYTES = 5_000_000
 NETWORK_IDLE_BUDGET_MS = 5_000
+# Bounded retry for transient browser failures. This is deliberately small:
+# a browser run already has its own timeout, and retries must not multiply
+# latency or bypass the rate limiter.
+MAX_BROWSER_ATTEMPTS = 2
+BROWSER_RETRY_DELAY_S = 0.5
+_TRANSIENT_BROWSER_MARKERS = (
+    "timeout",
+    "temporarily",
+    "temporary",
+    "net::err",
+    "econnreset",
+    "connection reset",
+    "socket hang up",
+)
 
 _LINK_HINTS = ("link", "url", "href", "reference")
 _SCREENSHOT_HINTS = ("screenshot", "capture", "image", "picture", "snapshot")
@@ -69,6 +83,12 @@ def _record(
             duration_ms=int((time.perf_counter() - phase_started) * 1000),
         )
     )
+
+
+def _is_transient_browser_error(exc: PlaywrightError) -> bool:
+    """Return True only for failures that look temporary and worth retrying."""
+    message = getattr(exc, "message", str(exc)).lower()
+    return any(marker in message for marker in _TRANSIENT_BROWSER_MARKERS)
 
 
 def _wants_screenshot(request: AgentRunRequest) -> bool:
@@ -185,26 +205,54 @@ async def execute_run(request: AgentRunRequest) -> AgentRunResponse:
             detail=str(exc),
         ) from exc
 
-    try:
-        scraped = await browser_manager.run_with_page(
-            lambda page: _scrape(page, request, steps)
-        )
-    except PlaywrightTimeoutError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Timed out after {request.timeout_ms} ms while visiting {target_url}.",
-        ) from exc
-    except PlaywrightError as exc:
-        message = getattr(exc, "message", str(exc))
+    scraped: dict[str, Any] | None = None
+    for attempt in range(1, MAX_BROWSER_ATTEMPTS + 1):
+        # Each attempt gets its own trace so a failed attempt cannot leak
+        # half-finished steps into the successful result.
+        attempt_steps: list[AgentStep] = []
+        phase = time.perf_counter()
+        try:
+            scraped = await browser_manager.run_with_page(
+                lambda page, trace=attempt_steps: _scrape(page, request, trace)
+            )
+            steps.extend(attempt_steps)
+            break
+        except (PlaywrightTimeoutError, PlaywrightError) as exc:
+            steps.extend(attempt_steps)
+            timed_out = isinstance(exc, PlaywrightTimeoutError)
+            transient = timed_out or _is_transient_browser_error(exc)
+            if not transient or attempt == MAX_BROWSER_ATTEMPTS:
+                if timed_out:
+                    raise HTTPException(
+                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                        detail=(
+                            f"Timed out after {request.timeout_ms} ms "
+                            f"while visiting {target_url}."
+                        ),
+                    ) from exc
+                message = getattr(exc, "message", str(exc))
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Browser failed while visiting {target_url}: {message}",
+                ) from exc
+            _record(
+                steps,
+                "retry",
+                f"attempt {attempt} failed ({type(exc).__name__}); retrying",
+                phase,
+            )
+            await asyncio.sleep(BROWSER_RETRY_DELAY_S * attempt)
+        except BrowserUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
+
+    if scraped is None:  # pragma: no cover - every failed attempt raises above
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Browser failed while visiting {target_url}: {message}",
-        ) from exc
-    except BrowserUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+            detail=f"Browser returned no result for {target_url}.",
+        )
 
     full_text = scraped["text"]
     text_truncated = len(full_text) > MAX_TEXT_CHARS
@@ -276,6 +324,7 @@ async def capabilities() -> dict[str, Any]:
             "engine": "chromium",
             "headless": True,
             "reused_across_requests": True,
+            "max_attempts": MAX_BROWSER_ATTEMPTS,
         },
         "ai": {
             "configured": ai_available(),

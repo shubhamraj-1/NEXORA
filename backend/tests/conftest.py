@@ -22,7 +22,7 @@ from app.config import settings
 from app.main import app
 from app.ratelimit import rate_limiter
 
-TEST_SECRET = "test-only-local-secret"
+TEST_SECRET = "local-only-test-secret-not-for-production-32b"
 TEST_ISSUER = "https://example.supabase.co/auth/v1"
 TEST_USER_ID = "11111111-1111-4111-8111-111111111111"
 

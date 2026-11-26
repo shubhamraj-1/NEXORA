@@ -9,6 +9,7 @@ With no verification settings the API stays open for local development.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,8 @@ from fastapi import HTTPException, Request, status
 from jwt import PyJWKClient
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 _JWKS_CLIENTS: dict[str, PyJWKClient] = {}
 
@@ -135,17 +138,23 @@ async def current_user(request: Request) -> AuthUser | None:
     try:
         claims = verify_access_token(token)
     except Exception as exc:
+        # Keep verification details in server logs instead of the HTTP response.
+        # Exceptions can contain issuer, key-id, or JWKS endpoint information.
+        logger.warning("Supabase token verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {exc}",
+            detail="Invalid or expired access token.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
     subject = claims.get("sub")
     if not subject:
+        # Keep the same generic client-facing error as every other verification
+        # failure; details stay in the server log.
+        logger.warning("Supabase token accepted without a usable subject claim")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token: missing sub",
+            detail="Invalid or expired access token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

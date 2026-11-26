@@ -98,6 +98,12 @@ npm run dev
 Open `http://localhost:3000`. The Next.js dev server proxies `/api/*` to the
 backend, so local CORS setup is not needed.
 
+Do not run `npm run build` while `npm run dev` is running. Both write to
+`frontend/.next`; overlapping them produces stale client manifests and
+`__webpack_modules__` errors. Stop the dev server first, then build or restart.
+Use `localhost` where possible; `allowedDevOrigins` lists the machine's LAN IP
+if you open the dev server from another device.
+
 With no keys configured, the app runs in deterministic local mode: browsing,
 extraction, screenshots, traces, tasks, cancellation, and exports still work.
 OpenAI and Supabase persistence are optional.
@@ -237,7 +243,9 @@ requests per minute per user.
 Full-page PNGs larger than 5 MB are recorded as skipped instead of being
 base64-encoded into a result. URL syntax is checked at the Pydantic boundary,
 DNS resolution runs in a worker thread, and document navigations including
-redirects are revalidated before Playwright sends them.
+redirects are revalidated before Playwright sends them. Transient browser
+timeouts and network failures get one bounded retry; every attempt is recorded
+in the execution trace, while non-transient failures still fail immediately.
 
 For local development, run one backend and one frontend process. Chromium is
 the largest memory consumer, so avoid duplicate `uvicorn` or `next dev`
